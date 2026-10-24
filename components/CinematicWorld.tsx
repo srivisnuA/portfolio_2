@@ -5,12 +5,17 @@ import { addAfterEffect, Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import ProjectLandmarks from "./ProjectLandmarks";
 import WorldDetails from "./WorldDetails";
+import WorldPlayground, { CelestialGarden, IslandMagic } from "./WorldPlayground";
+import { curiosities, type WorldActivity } from "@/lib/curiosities";
 import { advanceTravel, landmarkIndexForStop, LAST_STOP, nearestStop, seededRandom, stationPosition, STOP_SPACING, type TravelState } from "@/lib/world";
 import { initialRenderQuality, islandWindow, type RenderQuality } from "@/lib/render-quality";
 
 export type WorldProps = {
   travel: MutableRefObject<TravelState>;
   markerElements: MutableRefObject<(HTMLButtonElement | null)[]>;
+  curiosityElements: MutableRefObject<(HTMLButtonElement | null)[]>;
+  activity: MutableRefObject<WorldActivity>;
+  activityVersion: number;
   onProgress: (progress: number) => void;
   onReady: () => void;
   onUnavailable: () => void;
@@ -166,7 +171,7 @@ function Landmark({ index, color, texture, travel, compact }: { index: number; c
   return <ProjectLandmarks index={index} color={color} travel={travel} />;
 }
 
-function Island({ stop, texture, travel, compact }: { stop: number; texture: THREE.Texture; travel: MutableRefObject<TravelState>; compact: boolean }) {
+function Island({ stop, texture, travel, compact, activity }: { stop: number; texture: THREE.Texture; travel: MutableRefObject<TravelState>; compact: boolean; activity: WorldProps["activity"] }) {
   const index = landmarkIndexForStop(stop);
   const geometry = useMemo(() => islandGeometry(70 + index * 17, index === 0 ? 9 : 8.2, index, compact), [index, compact]);
   const rocks = useMemo(() => {
@@ -183,6 +188,8 @@ function Island({ stop, texture, travel, compact }: { stop: number; texture: THR
     <mesh geometry={geometry}><meshStandardMaterial vertexColors roughness={.95} metalness={.08} side={THREE.DoubleSide} /></mesh>
     <Landmark index={index} color={color} texture={texture} travel={travel} compact={compact} />
     <WorldDetails index={index} color={color} travel={travel} compact={compact} />
+    <IslandMagic index={index} texture={texture} color={color} travel={travel} compact={compact} />
+    <WorldPlayground stop={stop} color={color} texture={texture} travel={travel} activity={activity} compact={compact} />
     {rocks.map((rock, n) => <mesh key={n} position={[rock.x, rock.scale * .2, rock.z]} scale={[rock.scale, rock.scale * 1.3, rock.scale]} rotation={[.2, rock.rotation, .15]}><dodecahedronGeometry args={[1, 0]} /><meshStandardMaterial color={index === 7 ? "#8a8c83" : index === 4 ? "#8f765d" : index === 5 ? "#527564" : n % 4 ? "#304451" : "#788279"} roughness={1} /></mesh>)}
     {[-4.4, 4.4].map((x, n) => <Pylon key={n} position={[x, -.1, 3.5]} height={.7} color={color} />)}
     <mesh position={[0, -2.8, 0]} rotation={[0, 0, Math.PI]}><coneGeometry args={[2.9, 16, compact ? 20 : 40, 1, true]} /><meshBasicMaterial color={color} transparent opacity={.018} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} /></mesh>
@@ -241,12 +248,13 @@ function Atmosphere({ texture, compact }: { texture: THREE.Texture; compact: boo
 }
 
 /** Distant chapters leave the React tree, releasing their meshes and sign textures. */
-function NearbyIslands({ travel, texture, compact, started, onMountedChange }: {
+function NearbyIslands({ travel, texture, compact, started, onMountedChange, activity }: {
   travel: MutableRefObject<TravelState>;
   texture: THREE.Texture;
   compact: boolean;
   started: boolean;
   onMountedChange: (stops: number[]) => void;
+  activity: WorldProps["activity"];
 }) {
   const [center, setCenter] = useState(() => nearestStop(travel.current.current));
   const [neighbors, setNeighbors] = useState<number[]>([]);
@@ -290,7 +298,7 @@ function NearbyIslands({ travel, texture, compact, started, onMountedChange }: {
     return [center, ...neighbors.filter(stop => stop !== center && desired.includes(stop))].sort((a, b) => a - b);
   }, [center, neighbors]);
   useEffect(() => { onMountedChange(stops); }, [onMountedChange, stops]);
-  return stops.map(stop => <Island key={stop} stop={stop} texture={texture} travel={travel} compact={compact} />);
+  return stops.map(stop => <Island key={stop} stop={stop} texture={texture} travel={travel} compact={compact} activity={activity} />);
 }
 
 type DirectorProps = WorldProps & {
@@ -299,7 +307,7 @@ type DirectorProps = WorldProps & {
   onSlowDevice: () => void;
 };
 
-function Director({ travel, markerElements, onProgress, onReady, onUnavailable, quality, onMountedChange, onSlowDevice }: DirectorProps) {
+function Director({ travel, markerElements, curiosityElements, activity, activityVersion, onProgress, onReady, onUnavailable, quality, onMountedChange, onSlowDevice }: DirectorProps) {
   const { camera, size, gl, invalidate } = useThree();
   const compact = quality === "compact";
   const [started, setStarted] = useState(false);
@@ -311,6 +319,7 @@ function Director({ travel, markerElements, onProgress, onReady, onUnavailable, 
   const announced = useRef(false);
   const rendered = useRef(false);
   const performanceSample = useRef({ elapsed: 0, frames: 0, done: false });
+  useEffect(() => { invalidate(); }, [activityVersion, invalidate]);
   useEffect(() => addAfterEffect(() => {
     // useFrame runs before gl.render; only announce readiness after an actual draw.
     if (!announced.current && rendered.current && gl.info.render.frame > 0 && !gl.getContext().isContextLost()) {
@@ -352,7 +361,7 @@ function Director({ travel, markerElements, onProgress, onReady, onUnavailable, 
     const parallax = motion.reduced || motion.paused ? 0 : 1;
     const arc = Math.sin(progress * Math.PI) ** 2;
     camera.position.set(x - 7 + motion.pointerX * .5 * parallax, y + (narrow ? 14 : 10) + arc * 2 + motion.pointerY * .35 * parallax, z + (narrow ? 41 : 26) + arc * 3);
-    look.set(x + (narrow ? 3 : 0), y + (narrow ? 7 : 1.1) + arc, z - 2);
+    look.set(x + (narrow ? 6.5 : 2.5), y + (narrow ? 7 : 1.1) + arc, z - 2);
     camera.lookAt(look);
     if (light.current) { light.current.position.set(x + 3, y + 5, z + 4); light.current.color.set(palette[landmarkIndexForStop(nearestStop(progress))]); }
     camera.updateMatrixWorld();
@@ -366,6 +375,19 @@ function Director({ travel, markerElements, onProgress, onReady, onUnavailable, 
       element.style.visibility = visible ? "visible" : "hidden";
       element.style.opacity = String(Math.max(0, 1 - distance / .62));
       element.style.transform = "translate3d(" + ((projection.x * .5 + .5) * size.width).toFixed(1) + "px," + ((-projection.y * .5 + .5) * size.height).toFixed(1) + "px,0) translate(-50%,-100%)";
+      element.tabIndex = visible ? 0 : -1;
+    });
+    curiosityElements.current.forEach((element, index) => {
+      if (!element) return;
+      const item = curiosities[index];
+      const station = stationPosition(item.stop);
+      projection.set(station[0] + item.at[0], station[1] + item.at[1] + 1.7, station[2] + item.at[2]);
+      projection.project(camera);
+      const distance = Math.abs(progress - item.stop);
+      const visible = distance < .38 && projection.z < 1 && Math.abs(projection.x) < .96 && !motion.paused;
+      element.style.visibility = visible ? "visible" : "hidden";
+      element.style.opacity = String(Math.min(1, Math.max(0, (.38 - distance) * 8)));
+      element.style.transform = `translate3d(${((projection.x * .5 + .5) * size.width).toFixed(1)}px,${((-projection.y * .5 + .5) * size.height).toFixed(1)}px,0) translate(-50%,-50%)`;
       element.tabIndex = visible ? 0 : -1;
     });
     clock.current += delta;
@@ -383,12 +405,13 @@ function Director({ travel, markerElements, onProgress, onReady, onUnavailable, 
         if (sample.elapsed / sample.frames > .034) onSlowDevice();
       }
     }
-  });
+  }, -1); // Advance the camera before nearby islands observe travel, even in a single reduced-motion frame.
   return <>
     <Atmosphere texture={texture} compact={compact} />
+    <CelestialGarden texture={texture} travel={travel} compact={compact} />
     <pointLight ref={light} color="#8edce1" intensity={70} distance={25} decay={2} />
     <WorldTrail texture={texture} compact={compact} />
-    <NearbyIslands travel={travel} texture={texture} compact={compact} started={started} onMountedChange={onMountedChange} />
+    <NearbyIslands travel={travel} texture={texture} compact={compact} started={started} onMountedChange={onMountedChange} activity={activity} />
   </>;
 }
 
@@ -415,7 +438,7 @@ export default function CinematicWorld(props: WorldProps) {
     <WorldBoundary onUnavailable={props.onUnavailable}>
     <Canvas frameloop={visible ? "demand" : "never"} dpr={compact ? 1 : [1, 1.5]} camera={{ position: [-7, 10, 26], fov: 43, near: .2, far: compact ? 300 : 420 }}
       gl={{ antialias: !compact, alpha: false, powerPreference: compact ? "default" : "high-performance", stencil: false }}
-      onCreated={({ gl }) => { gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1.25; }}
+      onCreated={({ gl }) => { gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1.35; }}
       fallback="This browser could not display the 3D world. Open the atlas to explore.">
       <Director {...props} quality={quality} onMountedChange={mounted} onSlowDevice={slowDevice} />
     </Canvas>

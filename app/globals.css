@@ -53,16 +53,18 @@ h1, h2, h3, p { margin: 0; }
 .world-brand > span { font-size: 13px; letter-spacing: 3px; color: #e2e4db; }
 .world-brand small { display: block; color: #7f9ba9; font-size: 11px; letter-spacing: 1.9px; margin-top: 7px; }
 .world-header nav { display: flex; align-items: center; gap: 33px; position: absolute; left: 50%; transform: translateX(-50%); }
-.world-header nav button { display: flex; gap: 8px; align-items: center; padding: 12px 0; font-size: 14px; color: #a9bcc9; transition: color .25s; white-space: nowrap; }
+.world-header nav button { display: flex; gap: 8px; align-items: center; padding: 12px 9px; font-size: 14px; color: #a9bcc9; transition: color .25s, background .25s, box-shadow .25s; white-space: nowrap; border-radius: 5px; }
 .world-header nav button:hover { color: var(--ivory); }
-.world-header nav button:first-child { color: #ddd4ba; }
+.world-header { --nav-accent: #d6bf8d; }
+.world-header[data-location=signal] { --nav-accent: #a2e5d7; }
+.world-header nav button[aria-current=location] { color: var(--nav-accent); background: #bdcabb12; box-shadow: inset 0 -1px var(--nav-accent); }
 .world-sound { display: flex; align-items: center; gap: 9px; color: #b0c0c9; padding: 10px 0 10px 10px; }
 .world-sound span { font-size: 12px; letter-spacing: 1.6px; }
 .world-sound[aria-pressed=true] { color: var(--gold); }
 .world-coordinates { position: absolute; top: 113px; left: 4.1%; display: flex; align-items: center; gap: 9px; color: #90a8b9; font-size: 11px; letter-spacing: 1.7px; pointer-events: none; opacity: .7; }
 .coordinate-cross { font-size: 17px; font-weight: 200; color: #d4bd8c; margin-right: 1px; }
 .world-coordinates i { width: 25px; height: 1px; background: #a3bfcc50; margin: 0 4px; }
-.world-caption { position: absolute; left: 7.9%; top: 48%; width: 41%; max-width: 610px; margin-top: -190px; pointer-events: none; z-index: 2; will-change: transform, opacity; }
+.world-caption { position: absolute; left: 7.9%; top: 48%; width: 41%; max-width: 610px; margin-top: -190px; pointer-events: none; z-index: 5; will-change: transform, opacity; }
 .world-caption > .eyebrow { font-size: 12px; letter-spacing: 2px; color: #b4beaf; display: flex; align-items: center; gap: 10px; margin-bottom: 23px; }
 .world-caption > .eyebrow > span { width: 4px; height: 4px; border-radius: 50%; border: 1px solid var(--gold); }
 .world-caption h1 { font: 400 clamp(58px, 6.7vw, 102px)/.98 var(--serif); letter-spacing: -3.6px; color: #eeeee4; text-shadow: 0 1px 45px #07142155; }
@@ -225,7 +227,7 @@ h1, h2, h3, p { margin: 0; }
   .world-header nav { left: auto; right: 37px; transform: none; gap: 18px; }
   .world-header nav button { font-size: 13px; }
   .world-header nav button:first-child > svg { width: 14px; }
-  .world-header nav button:nth-child(2), .world-header nav button:nth-child(3) { display: none; }
+  .world-header nav .nav-explorer { display: none; }
   .world-brand { gap: 8px; }
   .world-brand svg { width: 35px; height: 35px; }
   .world-brand > span { font-size: 12px; letter-spacing: 1.8px; }
@@ -360,7 +362,7 @@ h1, h2, h3, p { margin: 0; }
 }
 @media (max-width: 1100px) {
   .journey-bottomline > span { display: none; }
-  .world-header nav button:nth-child(3), .world-header nav button:nth-child(4) { display: none; }
+  .world-header nav .nav-explorer { display: none; }
   .world-header nav { gap: 24px; }
   .tour-control, .chapter-counter { min-width: 180px; }
   .journey-instruction { font-size: 11px; letter-spacing: .7px; }
@@ -372,7 +374,7 @@ h1, h2, h3, p { margin: 0; }
   .world-header nav button { font-size: 12px; }
   .world-header nav button:nth-child(2) { display: flex; }
   .world-header nav button:first-child svg { display: none; }
-  .world-header nav button:nth-child(3), .world-header nav button:nth-child(4) { display: none; }
+  .world-header nav .nav-explorer { display: none; }
   .world-caption { width: 86%; max-width: 430px; top: 16%; }
   .world-caption > .eyebrow { font-size: 11px; line-height: 1.6; letter-spacing: 1px; }
   .world-caption h1 { font-size: clamp(49px, 11vw, 65px); }
@@ -425,4 +427,53 @@ h1, h2, h3, p { margin: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* A tiny spacecraft follows input; every flight is drawn without React renders. */
+.ufo-flight-layer { position: fixed; inset: 0; z-index: 80; pointer-events: none; overflow: hidden; }
+.ufo-cursor { position: absolute; top: -32px; left: -40px; width: 80px; height: 64px; opacity: 0; will-change: transform; transition: opacity .22s; }
+.ufo-cursor svg { position: relative; width: 80px; height: 64px; filter: drop-shadow(0 3px 8px #03131cb3); }
+.ufo-aura { position: absolute; width: 70px; height: 70px; left: 5px; top: 0; border-radius: 50%; background: radial-gradient(ellipse, #9ff8d426, transparent 66%); transform: scale(1.5); }
+.ufo-engine { opacity: var(--thrust, .3); }
+.ufo-beam { opacity: .13; transition: opacity .2s; }
+.ufo-cursor[data-mode=hover] .ufo-beam { opacity: .45; }
+.ufo-target { position: absolute; left: 22px; top: 14px; width: 36px; height: 36px; border: 1px solid #d0ffe290; border-radius: 50%; opacity: 0; transform: scale(1.4); transition: opacity .2s, transform .2s; }
+.ufo-cursor[data-mode=hover] .ufo-target { opacity: .5; transform: scale(1.15); }
+.ufo-trail i { position: absolute; left: -4px; top: -4px; height: 8px; width: 8px; border-radius: 50%; opacity: 0; background: #a9f4db; box-shadow: 0 0 9px #b9ffe3; }
+@media (pointer: fine) {
+  html[data-ufo-cursor=true] .expedition, html[data-ufo-cursor=true] .expedition * { cursor: none; }
+}
+.curiosity-progress { position: absolute; z-index: 3; right: 4.1%; top: 111px; display: flex; align-items: center; gap: 12px; color: #c6d8d6; pointer-events: none; font-size: 12px; letter-spacing: 1.1px; }
+.curiosity-progress > span { font: 32px var(--serif); color: #d6c493; }
+.curiosity-progress small { display: block; font-size: 12px; line-height: 1.8; letter-spacing: .4px; color: #97b2bf; margin-top: 4px; }
+.curiosity-markers { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.world-curiosity { position: absolute; left: 0; top: 0; width: 46px; height: 46px; visibility: hidden; display: grid; place-items: center; pointer-events: auto; border-radius: 50%; background: #12334342; border: 1px solid #a8e4d178; color: #d1ffe6; box-shadow: 0 0 0 5px #a3e8ce07, 0 0 20px #8ef0d518; transition: background .2s, border-color .2s; }
+.curiosity-glyph { font-size: 18px; text-shadow: 0 0 12px #b6ffe2; }
+.world-curiosity:hover, .world-curiosity:focus-visible { background: #a6e2c633; border-color: #e4f6d2; }
+.world-curiosity.is-discovered { color: #efcc8d; border-color: #d8bb795c; }
+.curiosity-label { position: absolute; left: 50%; bottom: 55px; transform: translateX(-50%) translateY(5px); white-space: nowrap; background: #0a1e2be8; padding: 7px 10px; border: 1px solid #91c9b32e; color: #d6e6df; font-size: 12px; letter-spacing: .3px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+.world-curiosity:hover .curiosity-label, .world-curiosity:focus-visible .curiosity-label { opacity: 1; transform: translateX(-50%); }
+.curiosity-response { position: absolute; right: 4.1%; bottom: 190px; width: min(350px, 85vw); z-index: 9; display: flex; gap: 14px; align-items: flex-start; padding: 18px 20px; color: #c6dedc; border: 1px solid #a9d6c74a; background: linear-gradient(120deg, #153c43ed, #0b2130ed); box-shadow: 0 15px 50px #020c1930; animation: discovery-arrives .35s ease-out; cursor: auto; }
+.curiosity-response > span { color: #efcd91; font-size: 26px; line-height: 1; }
+.curiosity-response > div { flex: 1; }
+.curiosity-response strong { color: #e7e6cd; font: 400 23px var(--serif); }
+.curiosity-response p { font-size: 14px; line-height: 1.65; margin-top: 7px; }
+.curiosity-response > button { padding: 3px; color: #c4d5d3; }
+@keyframes discovery-arrives { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (max-width: 700px) {
+  .world-coordinates { display: none; }
+  .curiosity-progress { top: 89px; right: auto; left: 7%; gap: 8px; font-size: 11px; letter-spacing: .7px; }
+  .curiosity-progress > span { font-size: 22px; }
+  .curiosity-progress small { display: none; }
+  .curiosity-count-label::after { content: " · TAP THE GLOW"; color: #8bb7ba; font-size: 10px; }
+  .world-curiosity { width: 42px; height: 42px; }
+  .curiosity-label { font-size: 11px; }
+  .curiosity-response { left: 7%; right: 7%; width: auto; bottom: 180px; padding: 14px 16px; gap: 10px; }
+  .curiosity-response strong { font-size: 21px; }
+  .curiosity-response p { font-size: 13px; }
+  .world-header nav { top: 53px; left: -5px; right: auto; gap: 13px; transform: none; }
+  .world-header nav button { min-height: 40px; padding: 9px 8px; font-size: 12px; }
+  .world-header nav button:nth-child(2), .world-header nav button:nth-child(3) { display: flex; }
+  .curiosity-progress { top: 120px; }
+  .world-caption { top: 156px; }
 }

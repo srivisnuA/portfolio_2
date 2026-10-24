@@ -12,13 +12,15 @@ export class AmbientAudio {
   private cursorVoice: OscillatorNode | null = null;
   private cursorGain: GainNode | null = null;
   private cursorTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastNote = -1;
+  private lastNoteTime = -1;
   private nodes: AudioNode[] = [];
   private oscillators: OscillatorNode[] = [];
   private enabled = false;
   private disposed = false;
   private revision = 0;
   private listening = false;
-  private static readonly volume = 0.16;
+  private static readonly volume = 0.27;
 
   private readonly handleVisibility = () => {
     // Muting instead of suspending avoids needing another autoplay permission
@@ -61,6 +63,21 @@ export class AmbientAudio {
     panner.connect(master);
     master.connect(context.destination);
     this.nodes.push(filter, panner, master);
+
+    // A soft tempo echo gives notes space to overlap without harsh retriggers.
+    const delay = context.createDelay(1);
+    const echo = context.createGain();
+    const echoTone = context.createBiquadFilter();
+    delay.delayTime.value = .375;
+    echo.gain.value = .24;
+    echoTone.type = "lowpass";
+    echoTone.frequency.value = 1700;
+    panner.connect(delay);
+    delay.connect(echoTone);
+    echoTone.connect(echo);
+    echo.connect(master);
+    echo.connect(delay);
+    this.nodes.push(delay, echo, echoTone);
 
     const cursor = context.createOscillator();
     const cursorGain = context.createGain();
@@ -117,12 +134,44 @@ export class AmbientAudio {
     const now = context.currentTime;
     this.panner?.pan.setTargetAtTime(field.pan, now, .16);
     this.filter?.frequency.setTargetAtTime(field.cutoff, now, .22);
-    this.cursorVoice?.frequency.setTargetAtTime(field.frequency, now, .16);
-    this.cursorGain?.gain.setTargetAtTime(field.gain, now, .12);
+    this.cursorVoice?.frequency.setTargetAtTime(field.frequency / 2, now, .2);
+    this.cursorGain?.gain.setTargetAtTime(field.gain * .45, now, .15);
+    if (speed > .035 && now - this.lastNoteTime > .18 && (field.note !== this.lastNote || now - this.lastNoteTime > .52)) {
+      this.playTone(field.frequency, .06 + Math.min(1, speed) * .055, now);
+      this.lastNote = field.note;
+      this.lastNoteTime = now;
+    }
     if (this.cursorTimer) clearTimeout(this.cursorTimer);
     this.cursorTimer = setTimeout(() => {
-      if (this.context?.state === "running") this.cursorGain?.gain.setTargetAtTime(0, this.context.currentTime, .3);
-    }, 180);
+      if (this.context?.state === "running") this.cursorGain?.gain.setTargetAtTime(0, this.context.currentTime, .42);
+    }, 240);
+  }
+
+  releasePointer(): void {
+    if (!this.context || this.context.state !== "running") return;
+    this.cursorGain?.gain.setTargetAtTime(0, this.context.currentTime, .38);
+  }
+
+  private playTone(frequency: number, volume: number, start: number) {
+    const context = this.context;
+    if (!context || !this.filter) return;
+    const voice = context.createOscillator();
+    const envelope = context.createGain();
+    voice.type = "sine";
+    voice.frequency.value = frequency;
+    envelope.gain.setValueAtTime(0, start);
+    envelope.gain.linearRampToValueAtTime(volume, start + .035);
+    envelope.gain.setTargetAtTime(.0001, start + .07, .32);
+    voice.connect(envelope);
+    envelope.connect(this.filter);
+    this.oscillators.push(voice);
+    voice.onended = () => {
+      voice.disconnect(); envelope.disconnect();
+      const at = this.oscillators.indexOf(voice);
+      if (at !== -1) this.oscillators.splice(at, 1);
+    };
+    voice.start(start);
+    voice.stop(start + 1.65);
   }
 
   /** Returns whether sound is enabled; silence is the safe failure state. */
@@ -155,16 +204,17 @@ export class AmbientAudio {
   }
 
   /** A small, soft two-note chime for an explicit project selection. */
-  playSelect(): void {
+  playSelect(variation = 0): void {
     const context = this.context;
     const master = this.master;
     if (!this.enabled || this.disposed || !context || !master ||
         context.state !== "running" || document.hidden) return;
 
-    [440, 659.255].forEach((frequency, index) => {
+    const scales = [[293.665, 440, 587.33], [349.228, 523.251, 698.456], [391.995, 587.33, 783.991]];
+    scales[Math.abs(variation) % scales.length].forEach((frequency, index) => {
       const oscillator = context.createOscillator();
       const envelope = context.createGain();
-      const start = context.currentTime + index * 0.055;
+      const start = context.currentTime + index * 0.11;
       oscillator.type = "sine";
       oscillator.frequency.value = frequency;
       envelope.gain.setValueAtTime(0, start);

@@ -32,8 +32,18 @@ Open `http://<computer-Wi-Fi-IPv4>:3001` on a phone connected to the same networ
 - Select a world marker or “Explore this project” to open field notes.
 - The atlas provides direct chapter navigation and accessible project information.
 - Escape closes a panel. Project URLs support sharing, refresh, and browser Back.
+- During playback, details and discoveries pause the journey temporarily. Closing a
+  panel, returning to its landmark, or dismissing a discovery resumes playback.
+  Discoveries also resume when their message closes automatically. Manual pauses stay paused.
+- The top bar highlights the current destination. Arsenal and Signal Station can
+  be reached directly; selecting either again on its island opens its details.
 - Sound starts only when selected. Cursor position controls stereo balance and tone;
-  movement adds a quiet note that fades while still. The score uses original Web Audio synthesis.
+  movement plays a D minor pentatonic melody with a soft echo. Touch swipes play the
+  same instrument, and notes fade when movement stops. The score uses original Web Audio synthesis.
+- A UFO cursor banks into turns, trails stardust, and appears above a finger during touch flight.
+- Two glowing curiosities on every island can be clicked, tapped, or focused with the keyboard.
+  Align telescopes, release lanterns, launch UFOs, energize reactors, and open jump gates.
+  The discovery counter counts each of the 20 objects once; objects can be activated again.
 - Reduced motion freezes landmark animations and moves directly to selected camera positions.
 
 ## Content and rendering
@@ -43,6 +53,9 @@ lib/world.ts defines travel bounds, damping, station positions, and deterministi
 components/CinematicWorld.tsx contains the procedural Three.js world and its camera director.
 components/Portfolio.tsx provides the controls, projected world markers, and field notes.
 All terrain, stars, orbital sculptures, and landmark geometry are generated locally.
+Aurora ribbons, a ringed planet, fireflies, waterfalls and bioluminescent gardens
+complete the world. Most small scenery uses instanced batches, and particle effects
+share the scene's small glow texture.
 Project illustrations are identified as illustrations. Downloadable resumes are in public/resumes.
 Only the current island mounts for the first frame; adjacent islands arrive afterward.
 At most three islands stay mounted. Phones use a lower pixel ratio, lighter geometry,
@@ -64,11 +77,17 @@ Run the local server before the browser tests. On Windows, the test configuratio
 existing Chrome installation when available. Otherwise run npx playwright install chromium
 or set PLAYWRIGHT_EXECUTABLE_PATH. Set TEST_BASE_URL to test another deployment.
 
-## Vercel preview
+## Deployment
 
-Run npx vercel after signing into Vercel. Select a new project such as srivisnu-personal-atlas
-and use the default Next.js build settings. The default deployment is a preview.
-Do not link the existing production portfolio project unless you intend to replace it.
+The existing GitHub repository is https://github.com/srivisnuA/portfolio_2.
+Its main branch is connected to the Vercel project `portfolio-2` in the `srivisnua`
+account. Pushing to main triggers its production deployment.
+
+Production: https://portfolio-2-srivisnua.vercel.app
+
+Use the Next.js framework preset and the default install/build settings. Verify
+that the Vercel check succeeds for the pushed commit and that production serves
+the updated atlas before considering a deployment complete.
 
 Vercel supplies the preview hostname for metadata automatically. For a custom domain, set
 NEXT_PUBLIC_SITE_URL to its complete HTTPS URL before building.

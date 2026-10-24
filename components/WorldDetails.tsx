@@ -242,6 +242,48 @@ function scenery(index: number, color: string, compact: boolean): Details {
     box([1.8, 1.55, 3.16], [.5, .055, .025], "#e5d5b8");
     person(3.7, 2.6, "#d4b77b", .4);
   }
+  // Little landmarks reward a closer look, without adding more draw calls.
+  for (let n = 0; n < 11; n++) {
+    const angle = n / 11 * Math.PI * 2;
+    const x = Math.cos(angle) * 6.7, z = Math.sin(angle) * 4.3;
+    box([x, .18, z], [.28, .12, .28], "#667c82", [0, angle, 0]);
+    light([x, .26, z], [.1, .035, .1], n % 3 ? color : "#ffdea1");
+  }
+  if ([0, 5, 9].includes(index)) {
+    [[-6, -1.8], [-5.6, -.8], [5.6, -2.8], [4.5, -3.8]].forEach(([x, z], n) => {
+      for (let m = 0; m < 3; m++) {
+        const px = x + m * .23, pz = z + Math.sin(m * 3) * .25;
+        add("cylinder", [px, .25 + m * .06, pz], [.035, .4 + m * .1, .035], "#8eb9a7");
+        add("cone", [px, .53 + m * .1, pz], [.19 + m * .025, .15, .19 + m * .025], n % 2 ? "#c09cd3" : "#86d0bb");
+        light([px, .53 + m * .1, pz], [.11, .04, .11], n % 2 ? "#e4b7e9" : "#bdffe1");
+      }
+    });
+    [-1, 1].forEach(side => {
+      pine(side * 6.1, -2.7, .8, "#438985");
+      pine(side * 5.2, -3.6, .7, "#50898b");
+    });
+  }
+  if (index === 7) {
+    // A tiny off-world habitat, solar terrace and supply sled.
+    add("sphere", [-3.3, .28, -1.8], [1.1, .8, .95], "#c4d0c9");
+    box([-3.3, .45, -.9], [.5, .65, .16], "#456c7a");
+    light([-3.3, .64, -.8], [.26, .22, .025], "#b7e5dd");
+    panel(4.7, -.6, .8, 1.3); panel(4.7, 1.1, .8, 1.3);
+    box([-4.8, .35, .6], [1.6, .18, .9], "#7f9da7");
+    crate(-5, .6, .5, "#c4b990", .45);
+  }
+  if (index === 8) {
+    // A miniature fabrication hangar, with a half-built circuit creature.
+    box([-4.4, .7, -.5], [1.2, .15, .9], "#617d89");
+    box([-4.4, .35, -.5], [.9, .6, .65], "#3e5364");
+    add("sphere", [-4.4, 1.02, -.5], [.3, .27, .27], "#b3c9be");
+    light([-4.4, 1.07, -.22], [.31, .06, .025], "#9bf3da");
+    [-.2, .2].forEach(x => box([-4.4 + x, .79, -.5], [.09, .18, .09], "#c9b482"));
+    for (let n = 0; n < 4; n++) {
+      box([3.4 + n * .4, .6, -3.6], [.26, .9, .35], "#5c7184");
+      light([3.4 + n * .4, .82, -3.39], [.12, .2, .025], ["#a0d9be", "#d3b0dd", "#e2c18e", "#9cc9e1"][n]);
+    }
+  }
   return result;
 }
 

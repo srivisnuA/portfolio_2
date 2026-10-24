@@ -14,6 +14,28 @@ export const WORLD_STOPS = 10;
 export const STOP_SPACING = 34;
 export const LAST_STOP = WORLD_STOPS - 1;
 
+export type JourneyInterruption = { panel: boolean; curiosity: boolean; resume: boolean };
+
+/** Preserve the visitor's playback choice across nested details and discoveries. */
+export function interruptJourney(state: TravelState, pending: JourneyInterruption, kind: "panel" | "curiosity") {
+  pending.resume ||= state.playing;
+  pending[kind] = true;
+  state.playing = false;
+  state.paused = pending.panel;
+}
+
+export function finishJourneyInterruption(state: TravelState, pending: JourneyInterruption, kind: "panel" | "curiosity") {
+  // Closing a project can also emit popstate. A second close must be harmless.
+  if (!pending[kind]) return state.playing;
+  pending[kind] = false;
+  state.paused = pending.panel;
+  if (!pending.panel && !pending.curiosity) {
+    state.playing = pending.resume && !state.reduced && state.target < LAST_STOP;
+    pending.resume = false;
+  }
+  return state.playing;
+}
+
 // Chapter order is independent of the landmark's visual identity.
 export function projectIndexForStop(stop: number): number | null {
   const index = PROJECT_STOPS.findIndex(value => value === stop);

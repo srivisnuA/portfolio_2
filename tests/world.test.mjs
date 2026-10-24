@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { advanceTravel, ARSENAL_STOP, clampTravel, LAST_STOP, landmarkIndexForStop, nearestStop, projectIndexForStop, stationPosition, stopForProjectIndex } from "../lib/world.ts";
+import { advanceTravel, ARSENAL_STOP, clampTravel, finishJourneyInterruption, interruptJourney, LAST_STOP, landmarkIndexForStop, nearestStop, projectIndexForStop, stationPosition, stopForProjectIndex } from "../lib/world.ts";
 import { pointerSound } from "../lib/sound-field.ts";
 
 test("travel is bounded and rejects non-finite input", () => {
@@ -65,4 +65,35 @@ test("cursor sound follows position and speed within safe parameter bounds", () 
   assert.equal(left.gain, 0);
   assert.ok(right.gain <= .09);
   for (const value of Object.values(pointerSound(Infinity, NaN, -100))) assert.ok(Number.isFinite(value));
+});
+
+test("closing details restores playing without starting a manually paused journey", () => {
+  const state = { current: 2, target: 2, playing: true, paused: false, reduced: false, pointerX: 0, pointerY: 0 };
+  const pending = { panel: false, curiosity: false, resume: false };
+  interruptJourney(state, pending, "panel");
+  assert.equal(state.paused, true);
+  assert.equal(state.playing, false);
+  assert.equal(finishJourneyInterruption(state, pending, "panel"), true);
+  assert.equal(state.paused, false);
+  assert.equal(finishJourneyInterruption(state, pending, "panel"), true);
+  state.playing = false;
+  interruptJourney(state, pending, "panel");
+  assert.equal(finishJourneyInterruption(state, pending, "panel"), false);
+});
+
+test("nested discoveries preserve intent and reduced motion or manual control cancels resuming", () => {
+  const state = { current: 1, target: 1, playing: true, paused: false, reduced: false, pointerX: 0, pointerY: 0 };
+  const pending = { panel: false, curiosity: false, resume: false };
+  interruptJourney(state, pending, "curiosity");
+  assert.equal(state.paused, false); // the object can still animate
+  interruptJourney(state, pending, "panel");
+  assert.equal(finishJourneyInterruption(state, pending, "curiosity"), false);
+  assert.equal(finishJourneyInterruption(state, pending, "panel"), true);
+  interruptJourney(state, pending, "curiosity");
+  pending.resume = false;
+  assert.equal(finishJourneyInterruption(state, pending, "curiosity"), false);
+  state.playing = true;
+  interruptJourney(state, pending, "panel");
+  state.reduced = true;
+  assert.equal(finishJourneyInterruption(state, pending, "panel"), false);
 });

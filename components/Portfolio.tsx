@@ -6,8 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, Copy, Github, Headphones, Linkedin, Map, Minus, Pause, Play, Plus, Volume2, VolumeX, X } from "lucide-react";
 import { AmbientAudio } from "@/lib/audio";
 import { arsenalGroups, profile, projects, resumeLinks, skillGroups, type Project } from "@/lib/content";
-import { advanceTravel, ARSENAL_STOP, clampTravel, LAST_STOP, nearestStop, projectIndexForStop, stopForProjectIndex, type TravelState } from "@/lib/world";
+import { advanceTravel, ARSENAL_STOP, clampTravel, finishJourneyInterruption, interruptJourney, LAST_STOP, nearestStop, projectIndexForStop, stopForProjectIndex, type JourneyInterruption, type TravelState } from "@/lib/world";
 import WorldPoster from "./WorldPoster";
+import UfoCursor from "./UfoCursor";
+import { curiosities, type Curiosity, type WorldActivity } from "@/lib/curiosities";
 import type { WorldProps } from "./CinematicWorld";
 
 function UnavailableWorld({ onUnavailable }: WorldProps) {
@@ -83,7 +85,10 @@ function ProjectDossier({ project, onVisit }: { project: Project; onVisit: () =>
 
 export default function Portfolio() {
   const travel = useRef<TravelState>({ current: 0, target: 0, playing: false, paused: false, reduced: false, pointerX: 0, pointerY: 0 });
+  const interrupted = useRef<JourneyInterruption>({ panel: false, curiosity: false, resume: false });
   const markerElements = useRef<(HTMLButtonElement | null)[]>([]);
+  const curiosityElements = useRef<(HTMLButtonElement | null)[]>([]);
+  const activity = useRef<WorldActivity>({ id: "", stop: 0, started: 0, serial: 0 });
   const audio = useRef<AmbientAudio | null>(null);
   const readyRef = useRef(false);
   const pushedProject = useRef(false);
@@ -102,6 +107,9 @@ export default function Portfolio() {
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [discovered, setDiscovered] = useState<string[]>([]);
+  const [curiosity, setCuriosity] = useState<Curiosity | null>(null);
+  const [activityVersion, setActivityVersion] = useState(0);
   const currentStop = nearestStop(progress);
   const activeProject = projectAtStop(currentStop);
   const arrival = currentStop === 0;
@@ -113,9 +121,20 @@ export default function Portfolio() {
   const frame = useCallback((value: number) => {
     setProgress(value);
     if (!travel.current.playing) setPlaying(false);
-  }, []);
+  }, [setProgress, setPlaying]);
   const worldReady = useCallback(() => { readyRef.current = true; setReady(true); }, []);
   const worldUnavailable = useCallback(() => { setUnavailable(true); setReady(true); readyRef.current = true; }, []);
+
+  const closeCuriosity = useCallback(() => {
+    setCuriosity(null);
+    setPlaying(finishJourneyInterruption(travel.current, interrupted.current, "curiosity"));
+  }, [setCuriosity, setPlaying]);
+
+  useEffect(() => {
+    if (!curiosity) return;
+    const timer = setTimeout(closeCuriosity, 5500);
+    return () => clearTimeout(timer);
+  }, [closeCuriosity, curiosity]);
 
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -128,6 +147,7 @@ export default function Portfolio() {
         const index = stopForProjectIndex(projects.indexOf(initial));
         travel.current.current = travel.current.target = index;
         travel.current.paused = true;
+        interrupted.current.panel = true;
         setProgress(index);
         setSelectedProject(initial);
         setSheet("project");
@@ -136,21 +156,27 @@ export default function Portfolio() {
     });
     const motionChange = (event: MediaQueryListEvent) => {
       travel.current.reduced = event.matches;
-      if (event.matches) { travel.current.playing = false; setPlaying(false); }
+      if (event.matches) { interrupted.current.resume = false; travel.current.playing = false; setPlaying(false); }
       setReduced(event.matches);
     };
     const pop = () => {
       const id = new URL(window.location.href).searchParams.get("project");
       const project = projects.find(item => item.id === id);
-      travel.current.paused = !!project;
       if (project) {
+        interruptJourney(travel.current, interrupted.current, "panel");
+        interrupted.current.curiosity = false;
+        setCuriosity(null);
+        setPlaying(false);
         const index = stopForProjectIndex(projects.indexOf(project));
         travel.current.current = travel.current.target = index;
         setProgress(index);
         setSelectedProject(project);
         setSheet("project");
       }
-      else setSheet(null);
+      else {
+        setSheet(null);
+        setPlaying(finishJourneyInterruption(travel.current, interrupted.current, "panel"));
+      }
     };
     const timeout = setTimeout(() => { if (!readyRef.current) setLoadDelayed(true); }, 8000);
     preference.addEventListener("change", motionChange);
@@ -161,6 +187,7 @@ export default function Portfolio() {
       preference.removeEventListener("change", motionChange);
       window.removeEventListener("popstate", pop);
       audio.current?.dispose();
+      audio.current = null;
     };
   }, [worldUnavailable]);
 
@@ -185,10 +212,12 @@ export default function Portfolio() {
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1;
       const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
       travel.current.playing = false;
+      interrupted.current.resume = false;
       setPlaying(false);
       travel.current.target = clampTravel(travel.current.target + Math.max(-180, Math.min(180, delta * unit)) / 1150);
     };
     const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && interrupted.current.curiosity && !interrupted.current.panel) { event.preventDefault(); closeCuriosity(); return; }
       if (travel.current.paused || event.target instanceof Element && event.target.closest("input,textarea,summary,[contenteditable=true]")) return;
       if (event.key === " " && event.target instanceof Element && event.target.closest("button,a")) return;
       if (["ArrowRight", "ArrowDown", "PageDown", "ArrowLeft", "ArrowUp", "PageUp", "Home", "End", " "].includes(event.key)) event.preventDefault();
@@ -199,26 +228,34 @@ export default function Portfolio() {
       else if (event.key === "End") travel.current.target = LAST_STOP;
       else if (event.key === " ") {
         if (travel.current.reduced) return;
+        interrupted.current.resume = false;
+        interrupted.current.curiosity = false;
+        setCuriosity(null);
         travel.current.playing = !travel.current.playing;
         setPlaying(travel.current.playing);
       } else return;
-      if (event.key !== " ") { travel.current.playing = false; setPlaying(false); }
+      if (event.key !== " ") { interrupted.current.resume = false; travel.current.playing = false; setPlaying(false); }
     };
     window.addEventListener("wheel", wheel, { passive: false });
     window.addEventListener("keydown", key);
     return () => { window.removeEventListener("wheel", wheel); window.removeEventListener("keydown", key); };
-  }, []);
+  }, [closeCuriosity]);
 
   function goTo(stop: number) {
+    const continuePlaying = travel.current.playing || interrupted.current.resume;
     travel.current.target = clampTravel(stop);
-    travel.current.playing = false;
-    setPlaying(false);
+    interrupted.current.resume = false;
+    interrupted.current.curiosity = false;
+    setCuriosity(null);
+    travel.current.playing = continuePlaying && !travel.current.reduced && stop < LAST_STOP;
+    setPlaying(travel.current.playing);
     audio.current?.playSelect();
   }
 
   function showSheet(next: Exclude<Sheet, null>) {
-    travel.current.paused = true;
-    travel.current.playing = false;
+    interruptJourney(travel.current, interrupted.current, "panel");
+    interrupted.current.curiosity = false;
+    setCuriosity(null);
     setPlaying(false);
     setSheet(next);
   }
@@ -235,7 +272,7 @@ export default function Portfolio() {
 
   function closeSheet() {
     setSheet(null);
-    travel.current.paused = false;
+    setPlaying(finishJourneyInterruption(travel.current, interrupted.current, "panel"));
     if (new URL(window.location.href).searchParams.has("project")) {
       if (pushedProject.current) { pushedProject.current = false; window.history.back(); }
       else {
@@ -246,9 +283,14 @@ export default function Portfolio() {
     }
   }
 
-  function visitProject(project: Project) {
+  function visitStop(stop: number) {
+    travel.current.target = clampTravel(stop);
+    audio.current?.playSelect();
     closeSheet();
-    goTo(stopForProjectIndex(projects.indexOf(project)));
+  }
+
+  function visitProject(project: Project) {
+    visitStop(stopForProjectIndex(projects.indexOf(project)));
   }
 
   async function toggleSound() {
@@ -264,6 +306,9 @@ export default function Portfolio() {
   }
 
   function togglePlay() {
+    interrupted.current.resume = false;
+    interrupted.current.curiosity = false;
+    setCuriosity(null);
     if (reduced) {
       travel.current.reduced = false;
       setReduced(false);
@@ -284,13 +329,27 @@ export default function Portfolio() {
     }
   }
 
+  function activateCuriosity(item: Curiosity, started: number) {
+    interruptJourney(travel.current, interrupted.current, "curiosity");
+    travel.current.target = item.stop;
+    setPlaying(false);
+    activity.current = { id: item.id, stop: item.stop, started, serial: activity.current.serial + 1 };
+    setActivityVersion(activity.current.serial);
+    setCuriosity({ ...item });
+    setDiscovered(previous => previous.includes(item.id) ? previous : [...previous, item.id]);
+    audio.current?.playSelect(item.stop + Number(item.id.slice(-1)));
+  }
+
   return <main className={"expedition " + (reduced ? "reduced-motion " : "") + (isDragging ? "is-dragging" : "")}
     onPointerDown={event => {
+      pointerSample.current = { x: event.clientX, y: event.clientY, time: event.timeStamp };
       if (event.target instanceof Element && event.target.closest("button,a,dialog,input,summary") || sheet) return;
+      audio.current?.updatePointer(event.clientX / window.innerWidth * 2 - 1, event.clientY / window.innerHeight * 2 - 1, .08);
       drag.current = { x: event.clientX, target: travel.current.target, moved: false, pointer: event.pointerId };
       event.currentTarget.setPointerCapture(event.pointerId);
     }}
     onPointerMove={event => {
+      if (sheet) return;
       travel.current.pointerX = event.clientX / window.innerWidth - .5;
       travel.current.pointerY = event.clientY / window.innerHeight - .5;
       const previous = pointerSample.current;
@@ -304,6 +363,7 @@ export default function Portfolio() {
         drag.current.moved = true;
         setIsDragging(true);
         travel.current.playing = false;
+        interrupted.current.resume = false;
         setPlaying(false);
         travel.current.target = clampTravel(drag.current.target + delta / Math.max(350, window.innerWidth * .48));
       }
@@ -312,22 +372,29 @@ export default function Portfolio() {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       drag.current = null;
       setIsDragging(false);
+      if (event.pointerType === "touch") audio.current?.releasePointer();
     }}
-    onPointerCancel={() => { drag.current = null; setIsDragging(false); }}>
-    <a className="skip-world" href="#field-guide" onClick={() => showSheet("atlas")}>Open accessible project guide</a>
+    onPointerCancel={() => { drag.current = null; setIsDragging(false); audio.current?.releasePointer(); }}>
+    <a className="skip-world" href="#field-guide" onClick={event => { event.preventDefault(); showSheet("atlas"); }}>Open accessible project guide</a>
     <div className="world-canvas" aria-hidden="true" data-state={unavailable ? "fallback" : ready ? "ready" : "loading"}>
       <WorldPoster hidden={ready && !unavailable} />
-      {mountWorld && !unavailable && <CinematicWorld travel={travel} markerElements={markerElements} onProgress={frame} onReady={worldReady} onUnavailable={worldUnavailable} />}
+      {mountWorld && !unavailable && <CinematicWorld travel={travel} markerElements={markerElements} curiosityElements={curiosityElements} activity={activity} activityVersion={activityVersion} onProgress={frame} onReady={worldReady} onUnavailable={worldUnavailable} />}
     </div>
     <div className="world-shade" aria-hidden="true" /><div className="film-grain" aria-hidden="true" />
 
-    <header className="world-header">
+    <header className="world-header" data-location={arsenal ? "arsenal" : destination ? "signal" : activeProject ? "projects" : "arrival"}>
       <button className="world-brand" onClick={() => goTo(0)} aria-label="Return to the arrival"><Emblem /><span>SRIVISNU A.<small>THE PERSONAL ATLAS</small></span></button>
-      <nav aria-label="World navigation"><button onClick={() => showSheet("atlas")}><Map size={16} />The atlas</button><button onClick={() => goTo(ARSENAL_STOP)}>Arsenal</button><button onClick={() => showSheet("about")}>The explorer</button><button onClick={() => { goTo(LAST_STOP); }}>Make contact<ArrowUpRight size={15} /></button></nav>
+      <nav aria-label="World navigation">
+        <button onClick={() => showSheet("atlas")} aria-current={activeProject ? "location" : undefined}><Map size={16} />The atlas</button>
+        <button onClick={() => arsenal ? showSheet("arsenal") : goTo(ARSENAL_STOP)} aria-current={arsenal ? "location" : undefined}>Arsenal</button>
+        <button onClick={() => destination ? showSheet("contact") : goTo(LAST_STOP)} aria-current={destination ? "location" : undefined}>Signal Station<ArrowUpRight size={14} /></button>
+        <button className="nav-explorer" onClick={() => showSheet("about")}>The explorer</button>
+      </nav>
       <button className="world-sound" onClick={() => void toggleSound()} aria-label={sound ? "Mute sound" : "Enable ambient sound"} aria-pressed={sound}>{sound ? <Volume2 size={16} /> : <VolumeX size={16} />}<span>SOUND {sound ? "ON" : "OFF"}</span></button>
     </header>
 
     <div className="world-coordinates" aria-hidden="true"><span className="coordinate-cross">+</span> CHENNAI, EARTH <i /> {String(currentStop).padStart(2, "0")}° / {(progress / LAST_STOP * 360).toFixed(1)}′ E</div>
+    {ready && !unavailable && <div className="curiosity-progress"><span aria-hidden="true">✧</span><div><span>{String(discovered.length).padStart(2, "0")} / 20 <span className="curiosity-count-label">CURIOSITIES FOUND</span></span><small>Tap the little glowing objects</small></div></div>}
 
     <div className="world-caption" style={{ opacity: captionOpacity, transform: "translate3d(" + (-distance * 22) + "px,0,0)" }} key={currentStop}>
       <p className="eyebrow"><span />{arrival ? "PROLOGUE / A WORLD OF POSSIBILITIES" : destination ? "EPILOGUE / THE NEXT CHAPTER" : arsenal ? "01 / TOOLS OF THE TRADE" : String(currentStop).padStart(2, "0") + " / " + activeProject?.category.split(" / ")[0]}</p>
@@ -344,6 +411,12 @@ export default function Portfolio() {
       </button>)}
     </div>
 
+    <div className="curiosity-markers" aria-label="Island curiosities" role="group">
+      {curiosities.map((item, index) => <button key={item.id} ref={element => { curiosityElements.current[index] = element; }} className={"world-curiosity " + (discovered.includes(item.id) ? "is-discovered" : "")} data-curiosity={item.id} aria-label={item.action} tabIndex={-1} onClick={event => activateCuriosity(item, event.timeStamp)}><span className="curiosity-glyph" aria-hidden="true">{discovered.includes(item.id) ? "✧" : "✦"}</span><span className="curiosity-label">{item.title}</span></button>)}
+    </div>
+    {curiosity && <div className="curiosity-response" role="status" key={activityVersion}><span aria-hidden="true">✧</span><div><strong>{curiosity.title}</strong><p>{curiosity.response}</p></div><button aria-label="Dismiss discovery" onClick={closeCuriosity}><X size={15} /></button></div>}
+    <UfoCursor paused={!!sheet} reduced={reduced} />
+
     <div className="world-note" aria-hidden="true"><span>✧</span><div>{arrival ? "ALL GREAT THINGS BEGIN\nWITH A LITTLE CURIOSITY." : destination ? "THE BEST IDEAS\nARE STILL AHEAD." : "AN IDEA MADE REAL.\nA LANDMARK IN THE MAKING."}</div></div>
 
     <footer className="journey-hud">
@@ -357,7 +430,7 @@ export default function Portfolio() {
         <div className="travel-vessel" style={{ left: (progress / LAST_STOP * 100) + "%" }}><span /></div>
         {Array.from({ length: LAST_STOP + 1 }, (_, index) => <button key={index} onClick={() => goTo(index)} style={{ left: (index / LAST_STOP * 100) + "%" }} className={"track-stop " + (currentStop === index ? "active" : "")} aria-current={currentStop === index ? "step" : undefined} aria-label={stopName(index)}><i /><span>{String(index).padStart(2, "0")}</span></button>)}
       </div>
-      <div className="journey-bottomline"><span>AN INDEPENDENT EXPLORATION BY SRIVISNU A.</span><div><button onClick={() => goTo(Math.max(0, currentStop - 1))} disabled={currentStop === 0} aria-label="Previous landmark"><ArrowLeft size={14} /></button><span>FOLLOW THE LIGHT</span><button onClick={() => goTo(Math.min(LAST_STOP, currentStop + 1))} disabled={currentStop === LAST_STOP} aria-label="Next landmark"><ArrowRight size={14} /></button></div><button onClick={() => { const next = !reduced; setReduced(next); travel.current.reduced = next; if (next) { travel.current.playing = false; setPlaying(false); } }} aria-pressed={reduced}>{reduced ? "REDUCED MOTION" : "FULL MOTION"}<Minus size={10} /></button></div>
+      <div className="journey-bottomline"><span>AN INDEPENDENT EXPLORATION BY SRIVISNU A.</span><div><button onClick={() => goTo(Math.max(0, currentStop - 1))} disabled={currentStop === 0} aria-label="Previous landmark"><ArrowLeft size={14} /></button><span>FOLLOW THE LIGHT</span><button onClick={() => goTo(Math.min(LAST_STOP, currentStop + 1))} disabled={currentStop === LAST_STOP} aria-label="Next landmark"><ArrowRight size={14} /></button></div><button onClick={() => { const next = !reduced; setReduced(next); travel.current.reduced = next; if (next) { interrupted.current.resume = false; travel.current.playing = false; setPlaying(false); } }} aria-pressed={reduced}>{reduced ? "REDUCED MOTION" : "FULL MOTION"}<Minus size={10} /></button></div>
     </footer>
 
     {((loadDelayed && !ready) || unavailable) && <div className="scene-help" role="status"><span>{unavailable ? "Every destination is in the atlas." : "The world is on its way. Start exploring now."}</span><button onClick={() => showSheet("atlas")}>Open the atlas<ArrowRight size={15} /></button></div>}
@@ -368,7 +441,7 @@ export default function Portfolio() {
         <p className="eyebrow">SEVEN IDEAS. THREE DISCIPLINES. ONE WORLD.</p>
         <h2>Choose your<br /><em>own expedition.</em></h2>
         <div className="atlas-projects">
-          <div><span className="atlas-num">01</span><button onClick={() => { closeSheet(); goTo(ARSENAL_STOP); }}><span>The Arsenal</span><small>Tech stack · Tools · Platforms</small></button><button className="atlas-notes" onClick={() => showSheet("arsenal")} aria-label="Read about the Arsenal"><Plus size={16} /></button></div>
+          <div><span className="atlas-num">01</span><button onClick={() => visitStop(ARSENAL_STOP)}><span>The Arsenal</span><small>Tech stack · Tools · Platforms</small></button><button className="atlas-notes" onClick={() => showSheet("arsenal")} aria-label="Read about the Arsenal"><Plus size={16} /></button></div>
           {projects.map((project, index) => <div key={project.id}><span className="atlas-num">{String(stopForProjectIndex(index)).padStart(2, "0")}</span><button onClick={() => visitProject(project)}><span>{project.title}</span><small>{project.category}</small></button><button className="atlas-notes" onClick={() => openProject(project)} aria-label={"Read about " + project.title}><Plus size={16} /></button></div>)}
         </div>
         <p className="guide-hint">Select a title to travel there. Select + to open its field notes.</p>
